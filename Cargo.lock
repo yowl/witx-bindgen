@@ -2040,6 +2040,7 @@ dependencies = [
  "structopt",
  "witx-bindgen-gen-c",
  "witx-bindgen-gen-core",
+ "witx-bindgen-gen-csharp",
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-markdown",
  "witx-bindgen-gen-rust-wasm",
@@ -2080,6 +2081,15 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "witx2",
+]
+
+[[package]]
+name = "witx-bindgen-gen-csharp"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "structopt",
+ "witx-bindgen-gen-core",
 ]
 
 [[package]]
