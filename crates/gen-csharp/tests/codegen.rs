@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 mod imports {
-    test_helpers::codegen_c_import!(
+    test_helpers::codegen_csharp_import!(
         // ...
         "*.witx"
 
@@ -13,8 +13,8 @@ mod imports {
 }
 
 mod exports {
-    test_helpers::codegen_c_export!(
-        "*.witx"
+    test_helpers::codegen_csharp_export!(
+        "hellowasi.witx"
 
         // TODO: implement async support
         "!async_functions.witx"

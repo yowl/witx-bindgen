@@ -905,7 +905,7 @@ impl Generator for C {
         // actual wasm import that we'll be calling, and this has the raw wasm
         // signature.
         self.src.cs(&format!(
-            "[WasmImport(\"{}\"), FuncName(\"{}\")))]\n",
+            "[WasmImport(ModuleName=\"{}\", FunctionName=\"{}\")]\n",
             iface.name, func.name
         ));
         let import_name = self.names.tmp(&format!(
@@ -926,7 +926,7 @@ impl Generator for C {
             if i > 0 {
                 self.src.cs(", ");
             }
-            self.src.cs(wasm_type(*param));
+            self.src.cs(&format!("{} p{}", wasm_type(*param), i));
         }
         if sig.params.len() == 0 {
             self.src.cs("void");
@@ -1039,7 +1039,7 @@ using System.Runtime.InteropServices;
 using System.Text;
             
 
-            class {}
+            unsafe class {}
             {{
             "
         , iface.name.to_snake_case()));
@@ -1226,6 +1226,8 @@ struct FunctionBindgen<'a> {
     payloads: Vec<String>,
     params: Vec<String>,
     wasm_return: Option<String>,
+    pinned_array: Option<String>,
+    return_area_gc_handle : Option<String>,
 }
 
 impl<'a> FunctionBindgen<'a> {
@@ -1241,6 +1243,8 @@ impl<'a> FunctionBindgen<'a> {
             payloads: Vec::new(),
             params: Vec::new(),
             wasm_return: None,
+            pinned_array: None,
+            return_area_gc_handle : None,
         }
     }
 
@@ -1252,7 +1256,9 @@ impl<'a> FunctionBindgen<'a> {
     }
 
     fn load(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
-        results.push(format!("*(({}*) ({} + {}))", ty, operands[0], offset));
+        let name = self.locals.tmp("loadPtr");
+        self.src.push_str(&format!("\n{} {} = *({}*)({} + {});\n", ty, name, ty, operands[0], offset));
+        results.push(name);
     }
 
     fn load_ext(&mut self, ty: &str, offset: i32, operands: &[String], results: &mut Vec<String>) {
@@ -1318,10 +1324,13 @@ impl Bindgen for FunctionBindgen<'_> {
 
         let ptr = self.locals.tmp("ptr");
         let returned_area = self.locals.tmp("returnedArea");
-        let gc_handle = self.locals.tmp("gcHandle");
+        let gcHandleTemp = self.locals.tmp("gcHandle");
         self.src.push_str(&format!("var {} = new byte[16];\n", returned_area));
-        self.src.push_str(&format!("GCHandle {} = GCHandle.Alloc({}, GCHandleType.Pinned);\n", gc_handle, returned_area));
-        self.src.push_str(&format!("IntPtr {} = {}.AddrOfPinnedObject();\n", ptr, gc_handle));
+        self.src.push_str(&format!("GCHandle {} = GCHandle.Alloc({}, GCHandleType.Pinned);\n", gcHandleTemp, returned_area));
+        self.src.push_str(&format!("int {} = {}.AddrOfPinnedObject().ToInt32();\n", ptr, gcHandleTemp));
+
+        self.return_area_gc_handle = Some(gcHandleTemp);
+
         ptr
     }
 
@@ -1584,8 +1593,18 @@ impl Bindgen for FunctionBindgen<'_> {
 
             Instruction::ListCanonLower { .. } => {
                 println!("ListCanonLower");
-                results.push(format!("(int32_t) ({}).ptr", operands[0]));
-                results.push(format!("(int32_t) ({}).len", operands[0]));
+                let bytes_array = self.locals.tmp("utf8Bytes");
+                let pinnedTemp = self.locals.tmp("pinnedArray");
+                let ptr = self.locals.tmp("ptr");
+        
+                self.src.push_str(&format!("var {} = Encoding.UTF8.GetBytes({});\n", bytes_array, operands[0]));
+                self.src.push_str(&format!("GCHandle {} = GCHandle.Alloc({}, GCHandleType.Pinned);\n", pinnedTemp, bytes_array));
+                self.src.push_str(&format!("IntPtr {} = {}.AddrOfPinnedObject();\n\n", ptr, pinnedTemp));
+
+                results.push(format!("{}.ToInt32()", ptr));
+                results.push(format!("{}.Length", bytes_array));
+
+                self.pinned_array = Some(pinnedTemp);
             }
             Instruction::ListCanonLift { element, ty, .. } => {
                 let list_name = self.gen.type_string(iface, &Type::Id(*ty));
@@ -1593,10 +1612,24 @@ impl Bindgen for FunctionBindgen<'_> {
                     Type::Char => "char".into(),
                     _ => self.gen.type_string(iface, element),
                 };
+                let list_array = self.locals.tmp("elementArray");
+
+                // should create a vector of these on self
+                self.src.push_str(&format!("{}.Free();\n\n", self.pinned_array.as_ref().unwrap()));
+
+                let list_array = self.locals.tmp("resultArray");
+                self.src.push_str(&format!("var {} = new {}[{}];\n", list_array, elem_name, operands[1]));
+                // hardcoding for strings...  Use a match ?
+                // convert to array of UTF8 bytes
+                self.src.push_str(&format!("Encoding.UTF8.GetChars(new ReadOnlySpan<byte>((void*){}, {}), new Span<{}>({}));\n", 
+                    operands[0], operands[1], elem_name, list_array));
+                
+                // release the pinned return area space
+                self.src.push_str(&format!("{}.Free();\n\n", self.return_area_gc_handle.as_ref().unwrap()));
+    
                 results.push(format!(
-                    "({}) {{ ({}*)({}), (size_t)({}) }}",
-                    list_name, elem_name, operands[0], operands[1]
-                ));
+                    "new {}({})",
+                    list_name, list_array));
             }
 
             Instruction::ListLower { .. } => {
@@ -1789,6 +1822,18 @@ impl Bindgen for FunctionBindgen<'_> {
                 None => self.store_in_retptrs(operands),
                 Some(Scalar::Type(_)) => {
                     assert_eq!(operands.len(), 1);
+                    // var utf8BytesReturned = *((byte**)pointerReturnArea.ToPointer());
+
+                    // var lenPtr = new IntPtr(pointerReturnArea.ToInt32() + 8);
+                    // var len = BitConverter.ToInt32(new ReadOnlySpan<byte>((void*)lenPtr, 4));
+        
+                    // pinnedArray.Free();
+        
+                    // var s = new char[len];
+                    // Encoding.UTF8.GetChars(new ReadOnlySpan<byte>(utf8BytesReturned, len), new Span<char>(s));
+                    // pinnedReturnedArray.Free();
+        
+                    // return new string(s);
                     self.src.push_str("return ");
                     self.src.push_str(&operands[0]);
                     self.src.push_str(";\n");
@@ -1818,7 +1863,7 @@ impl Bindgen for FunctionBindgen<'_> {
                 }
             }
 
-            Instruction::I32Load { offset } => self.load("int32_t", *offset, operands, results),
+            Instruction::I32Load { offset } => self.load("int", *offset, operands, results),
             Instruction::I64Load { offset } => self.load("int64_t", *offset, operands, results),
             Instruction::F32Load { offset } => self.load("float", *offset, operands, results),
             Instruction::F64Load { offset } => self.load("double", *offset, operands, results),

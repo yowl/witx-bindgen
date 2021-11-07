@@ -1415,6 +1415,7 @@ dependencies = [
  "quote",
  "witx-bindgen-gen-c",
  "witx-bindgen-gen-core",
+ "witx-bindgen-gen-csharp",
  "witx-bindgen-gen-js",
  "witx-bindgen-gen-rust-wasm",
  "witx-bindgen-gen-spidermonkey",
@@ -2089,6 +2090,7 @@ version = "0.1.0"
 dependencies = [
  "heck",
  "structopt",
+ "test-helpers",
  "witx-bindgen-gen-core",
 ]
 

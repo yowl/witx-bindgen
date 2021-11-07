@@ -329,6 +329,22 @@ pub fn codegen_c_export(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-csharp")]
+pub fn codegen_csharp_import(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Import, "import", || {
+        witx_bindgen_gen_csharp::Opts::default().build()
+    })
+}
+
+#[proc_macro]
+#[cfg(feature = "witx-bindgen-gen-csharp")]
+pub fn codegen_c_export(input: TokenStream) -> TokenStream {
+    gen_verify(input, Direction::Export, "export", || {
+        witx_bindgen_gen_csharp::Opts::default().build()
+    })
+}
+
+#[proc_macro]
 #[cfg(feature = "witx-bindgen-gen-wasmtime-py")]
 pub fn codegen_py_import(input: TokenStream) -> TokenStream {
     gen_verify(input, Direction::Import, "import", || {
