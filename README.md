@@ -94,6 +94,10 @@ which uses interface types. This means that these languages support
   for Rust as well. With C the `witx-bindgen` CLI tool will emit a `*.h` and a
   `*.c` file to be compiled into the wasm module.
 
+* `C#` - this is for C Sharp (C#) compiled to WebAssembly, using either of the targets above
+  for Rust as well. With C the `witx-bindgen` CLI tool will emit a `*.cs`file to be compiled
+   into the wasm module.  (Incomplete, highly experimental)
+  
 This repository also supports a number of host languages/runtimes which can be
 used to consume WebAssembly modules that use interface types. These modules need
 to follow the canonical ABI for their exports/imports:
