@@ -37,27 +37,41 @@ impl<T> testwasi::Host for Wasi<T> {
     }
 }
 
-fn run_test<T, U>(
+trait TestConfigurer<T, U>
+where
+    T: Send,
+    U: Sized,
+{
+    fn instantiate(
+        &self,
+        store: &mut Store<Wasi<T>>,
+        component: &Component,
+        linker: &Linker<Wasi<T>>,
+    ) -> Result<(U, Instance)>;
+    fn test(&self, exports: U, store: &mut Store<Wasi<T>>) -> Result<()>;
+}
+
+fn run_test<T: Send, U, C>(
     name: &str,
     add_to_linker: fn(&mut Linker<Wasi<T>>) -> Result<()>,
-    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<(U, Instance)>,
-    test: fn(U, &mut Store<Wasi<T>>) -> Result<()>,
+    configurer: C
 ) -> Result<()>
 where
     T: Default,
+    C: TestConfigurer<T, U>,
 {
-    run_test_from_dir(name, name, add_to_linker, instantiate, test)
+    run_test_from_dir(name, name, add_to_linker, &configurer)
 }
 
-fn run_test_from_dir<T, U>(
+fn run_test_from_dir<T: Send, U, C>(
     dir_name: &str,
     name: &str,
     add_to_linker: fn(&mut Linker<Wasi<T>>) -> Result<()>,
-    instantiate: fn(&mut Store<Wasi<T>>, &Component, &Linker<Wasi<T>>) -> Result<(U, Instance)>,
-    test: fn(U, &mut Store<Wasi<T>>) -> Result<()>,
+    configurer: &C,
 ) -> Result<()>
 where
     T: Default,
+    C: TestConfigurer<T, U>,
 {
     // Create an engine with caching enabled to assist with iteration in this
     // project.
@@ -65,6 +79,7 @@ where
     config.cache_config_load_default()?;
     config.wasm_backtrace_details(wasmtime::WasmBacktraceDetails::Enable);
     config.wasm_component_model(true);
+
     let engine = Engine::new(&config)?;
 
     for wasm in tests(name, dir_name)? {
@@ -74,10 +89,10 @@ where
         add_to_linker(&mut linker)?;
         crate::testwasi::add_to_linker(&mut linker, |x| x)?;
         let mut store = Store::new(&engine, Wasi::default());
-        let (exports, _) = instantiate(&mut store, &component, &linker)?;
+        let (exports, _) = configurer.instantiate(&mut store, &component, &linker)?;
 
         println!("testing {wasm:?}");
-        test(exports, &mut store)?;
+        configurer.test(exports, &mut store)?;
     }
 
     Ok(())

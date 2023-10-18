@@ -1,7 +1,12 @@
 use anyhow::Result;
+use crate::TestConfigurer;
+use crate::Wasi;
+use wasmtime::component::{Component, Linker};
 use wasmtime::Store;
 
-wasmtime::component::bindgen!(in "tests/runtime/records");
+wasmtime::component::bindgen!({
+    path: "tests/runtime/records",
+});
 
 use test::records::test as test_imports;
 
@@ -52,13 +57,31 @@ impl test_imports::Host for MyImports {
     }
 }
 
+struct RecordsConfigurer {}
+
+impl TestConfigurer<MyImports, Records> for RecordsConfigurer {
+    fn instantiate(
+        &self,
+        store: &mut Store<Wasi<MyImports>>,
+        component: &Component,
+        linker: &Linker<Wasi<MyImports>>,
+    ) -> Result<(Records, wasmtime::component::Instance)> {
+        Records::instantiate(store, component, linker)
+    }
+
+    fn test(&self, exports: Records, store: &mut Store<Wasi<MyImports>>) -> Result<()> {
+        run_test(exports, store)
+    }
+}
+
 #[test]
 fn run() -> Result<()> {
+    let configurer = RecordsConfigurer {};
+
     crate::run_test(
         "records",
         |linker| Records::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| Records::instantiate(store, component, linker),
-        run_test,
+        configurer,
     )
 }
 

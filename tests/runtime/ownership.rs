@@ -1,7 +1,12 @@
 use anyhow::Result;
+use crate::TestConfigurer;
+use crate::Wasi;
+use wasmtime::component::{Component, Linker};
 use wasmtime::Store;
 
-wasmtime::component::bindgen!(in "tests/runtime/ownership");
+wasmtime::component::bindgen!({
+    path: "tests/runtime/ownership",
+});
 
 #[derive(Default)]
 pub struct MyImports {
@@ -31,15 +36,33 @@ impl thing_in_and_out::Host for MyImports {
     }
 }
 
+struct OwnershipConfigurer {}
+
+impl TestConfigurer<MyImports, Ownership> for OwnershipConfigurer {
+    fn instantiate(
+        &self,
+        store: &mut Store<Wasi<MyImports>>,
+        component: &Component,
+        linker: &Linker<Wasi<MyImports>>,
+    ) -> Result<(Ownership, wasmtime::component::Instance)> {
+        Ownership::instantiate(store, component, linker)
+    }
+
+    fn test(&self, exports: Ownership, store: &mut Store<Wasi<MyImports>>) -> Result<()> {
+        run_test(exports, store)
+    }
+}
+
 #[test]
 fn run() -> Result<()> {
+    let configurer = OwnershipConfigurer {};
+
     for name in ["owning", "borrowing", "borrowing-duplicate-if-necessary"] {
         crate::run_test_from_dir(
             "ownership",
             name,
             |linker| Ownership::add_to_linker(linker, |x| &mut x.0),
-            |store, component, linker| Ownership::instantiate(store, component, linker),
-            run_test,
+            &configurer,
         )?;
     }
 

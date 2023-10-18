@@ -1,7 +1,12 @@
 use anyhow::Result;
+use crate::TestConfigurer;
+use crate::Wasi;
+use wasmtime::component::{Component, Linker};
 use wasmtime::Store;
 
-wasmtime::component::bindgen!(in "tests/runtime/strings");
+wasmtime::component::bindgen!({
+    path: "tests/runtime/strings",
+});
 
 #[derive(Default)]
 pub struct MyImports;
@@ -17,13 +22,31 @@ impl test::strings::imports::Host for MyImports {
     }
 }
 
+struct StringsConfigurer {}
+
+impl TestConfigurer<MyImports, Strings> for StringsConfigurer {
+    fn instantiate(
+        &self,
+        store: &mut Store<Wasi<MyImports>>,
+        component: &Component,
+        linker: &Linker<Wasi<MyImports>>,
+    ) -> Result<(Strings, wasmtime::component::Instance)> {
+        Strings::instantiate(store, component, linker)
+    }
+
+    fn test(&self, exports: Strings, store: &mut Store<Wasi<MyImports>>) -> Result<()> {
+        run_test(exports, store)
+    }
+}
+
 #[test]
 fn run() -> Result<()> {
+    let configurer = StringsConfigurer {};
+
     crate::run_test(
         "strings",
         |linker| Strings::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| Strings::instantiate(store, component, linker),
-        run_test,
+        configurer
     )
 }
 

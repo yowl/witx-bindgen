@@ -1,7 +1,13 @@
 use anyhow::Result;
+use crate::TestConfigurer;
+use crate::Wasi;
+use wasmtime::component::{Component, Linker};
 use wasmtime::Store;
 
-wasmtime::component::bindgen!(in "tests/runtime/flavorful");
+wasmtime::component::bindgen!({
+    path: "tests/runtime/flavorful",
+    }
+);
 
 use exports::test::flavorful::test::*;
 use test::flavorful::test as test_imports;
@@ -105,13 +111,31 @@ impl test_imports::Host for MyImports {
     }
 }
 
+struct FlavorfulConfigurer {}
+
+impl TestConfigurer<MyImports, Flavorful> for FlavorfulConfigurer {
+    fn instantiate(
+        &self,
+        store: &mut Store<Wasi<MyImports>>,
+        component: &Component,
+        linker: &Linker<Wasi<MyImports>>,
+    ) -> Result<(Flavorful, wasmtime::component::Instance)> {
+        Flavorful::instantiate(store, component, linker)
+    }
+
+    fn test(&self, exports: Flavorful, store: &mut Store<Wasi<MyImports>>) -> Result<()> {
+        run_test(exports, store)
+    }
+}
+
 #[test]
 fn run() -> Result<()> {
+    let configurer = FlavorfulConfigurer {};
+
     crate::run_test(
         "flavorful",
         |linker| Flavorful::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| Flavorful::instantiate(store, component, linker),
-        run_test,
+        configurer,
     )
 }
 

@@ -1,7 +1,12 @@
 use anyhow::Result;
+use crate::TestConfigurer;
+use crate::Wasi;
+use wasmtime::component::{Component, Linker};
 use wasmtime::Store;
 
-wasmtime::component::bindgen!(in "tests/runtime/many_arguments");
+wasmtime::component::bindgen!({
+    path: "tests/runtime/many_arguments",
+});
 
 #[derive(Default)]
 pub struct MyImports {}
@@ -46,13 +51,31 @@ impl imports::Host for MyImports {
     }
 }
 
+struct ManyArgumentsConfigurer {}
+
+impl TestConfigurer<MyImports, ManyArguments> for ManyArgumentsConfigurer {
+    fn instantiate(
+        &self,
+        store: &mut Store<Wasi<MyImports>>,
+        component: &Component,
+        linker: &Linker<Wasi<MyImports>>,
+    ) -> Result<(ManyArguments, wasmtime::component::Instance)> {
+        ManyArguments::instantiate(store, component, linker)
+    }
+
+    fn test(&self, exports: ManyArguments, store: &mut Store<Wasi<MyImports>>) -> Result<()> {
+        run_test(exports, store)
+    }
+}
+
 #[test]
 fn run() -> Result<()> {
+    let configurer = ManyArgumentsConfigurer {};
+
     crate::run_test(
         "many_arguments",
         |linker| ManyArguments::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| ManyArguments::instantiate(store, component, linker),
-        run_test,
+        configurer,
     )
 }
 

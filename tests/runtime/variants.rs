@@ -1,7 +1,12 @@
 use anyhow::Result;
+use crate::TestConfigurer;
+use crate::Wasi;
+use wasmtime::component::{Component, Instance, Linker};
 use wasmtime::Store;
 
-wasmtime::component::bindgen!(in "tests/runtime/variants");
+wasmtime::component::bindgen!({
+    path: "tests/runtime/variants",
+});
 
 use test::variants::test as test_imports;
 
@@ -59,13 +64,30 @@ impl test_imports::Host for MyImports {
     }
 }
 
+struct VariantsConfigurer {}
+
+impl TestConfigurer<MyImports, Variants> for VariantsConfigurer {
+    fn instantiate(
+        &self,
+        store: &mut Store<Wasi<MyImports>>,
+        component: &Component,
+        linker: &Linker<Wasi<MyImports>>,
+    ) -> Result<(Variants, Instance)> {
+        Variants::instantiate(store, component, linker)
+    }
+
+    fn test(&self, exports: Variants, store: &mut Store<Wasi<MyImports>>) -> Result<()> {
+        run_test(exports, store)
+    }
+}
+
 #[test]
 fn run() -> Result<()> {
+    let configurer = VariantsConfigurer {};
     crate::run_test(
         "variants",
         |linker| Variants::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| Variants::instantiate(store, component, linker),
-        run_test,
+        configurer,
     )
 }
 

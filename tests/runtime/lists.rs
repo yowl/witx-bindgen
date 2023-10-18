@@ -1,4 +1,7 @@
 use anyhow::Result;
+use crate::TestConfigurer;
+use crate::Wasi;
+use wasmtime::component::{Component, Linker};
 use wasmtime::Store;
 
 wasmtime::component::bindgen!({
@@ -107,13 +110,31 @@ impl test::lists::test::Host for MyImports {
     }
 }
 
+struct ListsConfigurer {}
+
+impl TestConfigurer<MyImports, Lists> for ListsConfigurer {
+    fn instantiate(
+        &self,
+        store: &mut Store<Wasi<MyImports>>,
+        component: &Component,
+        linker: &Linker<Wasi<MyImports>>,
+    ) -> Result<(Lists, wasmtime::component::Instance)> {
+        Lists::instantiate(store, component, linker)
+    }
+
+    fn test(&self, exports: Lists, store: &mut Store<Wasi<MyImports>>) -> Result<()> {
+        run_test(exports, store)
+    }
+}
+
 #[test]
 fn run() -> Result<()> {
+    let configurer = ListsConfigurer {};
+
     crate::run_test(
         "lists",
         |linker| Lists::add_to_linker(linker, |x| &mut x.0),
-        |store, component, linker| Lists::instantiate(store, component, linker),
-        run_test,
+        configurer,
     )
 }
 
