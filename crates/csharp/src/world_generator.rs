@@ -61,6 +61,7 @@ impl CSharp {
         resolve: &'a Resolve,
         name: &'a str,
         direction: Direction,
+        is_world: bool,
     ) -> InterfaceGenerator<'a> {
         InterfaceGenerator {
             src: String::new(),
@@ -70,6 +71,7 @@ impl CSharp {
             resolve,
             name,
             direction,
+            is_world,
         }
     }
 
@@ -104,7 +106,7 @@ impl WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = interface_name(self, resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Import);
+        let mut gen = self.interface(resolve, &name, Direction::Import, false);
 
         let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
         gen.types(id);
@@ -152,7 +154,7 @@ impl WorldGenerator for CSharp {
 
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name, Direction::Import);
+        let mut gen = self.interface(resolve, name, Direction::Import, true);
 
         for (resource, funcs) in by_resource(
             funcs.iter().copied(),
@@ -183,7 +185,7 @@ impl WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = interface_name(self, resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Export);
+        let mut gen = self.interface(resolve, &name, Direction::Export, false);
 
         let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
         gen.types(id);
@@ -227,7 +229,7 @@ impl WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name, Direction::Export);
+        let mut gen = self.interface(resolve, name, Direction::Export, true);
 
         for (resource, funcs) in by_resource(funcs.iter().copied(), iter::empty()) {
             if let Some(resource) = resource {
@@ -256,7 +258,7 @@ impl WorldGenerator for CSharp {
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name, Direction::Import);
+        let mut gen = self.interface(resolve, name, Direction::Import, false);
 
         let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
         for (ty_name, ty) in types {
@@ -299,18 +301,53 @@ impl WorldGenerator for CSharp {
             src,
             "
              namespace {world_namespace} {{
+            ");
 
-             {access} interface I{name}World {{
+        let mut implemented_interfaces = String::new();
+
+        let import_body = self.world_fragments
+            .iter()
+            .filter(|f| f.direction == Direction::Import)
+            .map(|f| f.csharp_src.deref())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if import_body.len() > 0 {
+            uwrite!(src,
+                "{access} interface Imports
+                {{
+                    {import_body}
+                }}"
+            );
+            implemented_interfaces.push_str(": Imports");
+        };
+
+        let export_body = self.world_fragments
+            .iter()
+            .filter(|f| f.direction == Direction::Export)
+            .map(|f| f.csharp_src.deref())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        if export_body.len() > 0 {
+            uwrite!(src,
+                "
+                {access} interface Exports
+                {{
+                    {export_body}
+                }}");
+            if !implemented_interfaces.is_empty() {
+                implemented_interfaces.push_str(", ");
+            } else {
+                implemented_interfaces.push_str(": ");
+            }
+            
+            implemented_interfaces.push_str("Exports");
+        }
+        uwrite!(src,
             "
-        );
-
-        src.push_str(
-            &self
-                .world_fragments
-                .iter()
-                .map(|f| f.csharp_src.deref())
-                .collect::<Vec<_>>()
-                .join("\n"),
+             {access} interface I{name}World {implemented_interfaces} {{
+            "
         );
 
         let mut producers = wasm_metadata::Producers::empty();
@@ -495,7 +532,7 @@ impl WorldGenerator for CSharp {
 
             src.push_str("namespace exports {\n");
 
-            src.push_str(&format!("{access} static class {name}World\n"));
+            src.push_str(&format!("{access} static class {name}WorldInterop\n"));
             src.push_str("{");
 
             for fragment in &self.world_fragments {
@@ -666,22 +703,49 @@ impl WorldGenerator for CSharp {
                 &CSharp::get_class_name_from_qualified_name(full_name);
 
             // C#
-            let body = fragments
+            let import_body = fragments
                 .iter()
+                .filter(|f| f.direction == Direction::Import)
                 .map(|f| f.csharp_src.deref())
                 .collect::<Vec<_>>()
                 .join("\n");
 
-            if body.len() > 0 {
+            let export_body = fragments
+                .iter()
+                .filter(|f| f.direction == Direction::Export)
+                .map(|f| f.csharp_src.deref())
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            if import_body.len() > 0 || export_body.len() > 0 {
                 let body = format!(
                     "{header}
 
                     namespace {namespace};
 
                     {access} interface {interface_name} {{
-                        {body}
+                        {}
+                        {}
                     }}
                     ",
+                    if import_body.len() > 0 {
+                        format!(
+                    "{access} interface Imports
+                    {{
+                        {import_body}
+                    }}")
+                    } else {
+                        "".to_string()
+                    },
+                    if export_body.len() > 0 {
+                        format!(
+                    "{access} interface Exports
+                    {{
+                        {export_body}
+                    }}")
+                    } else {
+                        "".to_string()
+                    },
                 );
 
                 files.push(&format!("{full_name}.cs"), indent(&body).as_bytes());

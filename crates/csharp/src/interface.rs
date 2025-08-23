@@ -20,6 +20,7 @@ pub(crate) struct InterfaceFragment {
     pub(crate) csharp_src: String,
     pub(crate) csharp_interop_src: String,
     pub(crate) stub: String,
+    pub(crate) direction: Direction,
 }
 
 pub(crate) struct InterfaceTypeAndFragments {
@@ -47,6 +48,7 @@ pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) resolve: &'a Resolve,
     pub(crate) name: &'a str,
     pub(crate) direction: Direction,
+    pub(crate) is_world: bool,
 }
 
 impl InterfaceGenerator<'_> {
@@ -158,6 +160,7 @@ impl InterfaceGenerator<'_> {
                 csharp_src: self.src,
                 csharp_interop_src: self.csharp_interop_src,
                 stub: self.stub,
+                direction: self.direction,
             });
     }
 
@@ -166,6 +169,7 @@ impl InterfaceGenerator<'_> {
             csharp_src: self.src,
             csharp_interop_src: self.csharp_interop_src,
             stub: self.stub,
+            direction: self.direction,
         });
     }
 
@@ -251,16 +255,10 @@ impl InterfaceGenerator<'_> {
             funcs.push(self.gen_import_src(func, &results, ParameterType::Memory));
         }
 
-        let import_name = &func.name;
-
-        let target = if let FunctionKind::Freestanding = &func.kind {
-            &mut self.csharp_interop_src
-        } else {
-            &mut self.src
-        };
+        let import_name = func.name.to_string();
 
         uwrite!(
-            target,
+            self.csharp_interop_src,
             r#"
             internal static class {interop_camel_name}WasmInterop
             {{
@@ -272,7 +270,7 @@ impl InterfaceGenerator<'_> {
 
         for (src, params) in funcs {
             uwrite!(
-                target,
+                self.src,
                 r#"
                     {access} {extra_modifiers} {modifiers} unsafe {result_type} {camel_name}({params})
                     {{
