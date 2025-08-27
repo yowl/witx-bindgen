@@ -1,9 +1,6 @@
 {
     "version": "0.2.0",
     "configurations": [
-    
-        
-
         {
             "name": "Run wit-bindgen test",
             "type": "cppvsdbg",
@@ -22,6 +19,106 @@
             "stopAtEntry": false,
             "preLaunchTask": "cargo build"
 
+        },
+        {
+            "name": "Run import-and-export-resource.wit codegen test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\import-and-export-resource.wit",
+                "--world",
+                "%resources",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\import-and-export-resource.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+        },
+        {
+            "name": "Run worlds-with-types.wit codegen test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\worlds-with-types.wit",
+                "--world",
+                "%foo",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\worlds-with-types.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+        },
+        {
+            "name": "Run use-across-interfaces.wit codegen test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\use-across-interfaces.wit",
+                "--world",
+                "%baz",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\use-across-interfaces.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+        },
+        {
+            "name": "Run many-arguments.wit codegen test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\many-arguments.wit",
+                "--world",
+                "%the-world",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\many-arguments.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
+        },
+        {
+            "name": "Run lift-lower-foreign.wit codegen test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/wit-bindgen.exe",
+            "args": [
+                "csharp",
+                ".\\tests\\codegen\\lift-lower-foreign.wit",
+                "--world",
+                "%foo",
+                "--out-dir",
+                ".\\target\\artifacts\\codegen\\csharp\\lift-lower-foreign.wit\\bindings",
+                "--runtime=native-aot",
+                "--generate-stub"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false,
+            "preLaunchTask": "cargo build"
         },
         {
             "name": "Run wit-bindgen codegen csharp futures.wit",

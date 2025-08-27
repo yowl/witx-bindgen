@@ -19,6 +19,7 @@ use wit_parser::{
 pub(crate) struct InterfaceFragment {
     pub(crate) csharp_src: String,
     pub(crate) csharp_interop_src: String,
+    pub(crate) csharp_type_src: String,
     pub(crate) stub: String,
     pub(crate) direction: Direction,
 }
@@ -43,6 +44,7 @@ impl InterfaceTypeAndFragments {
 pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) src: String,
     pub(crate) csharp_interop_src: String,
+    pub(crate) type_src: String,
     pub(crate) stub: String,
     pub(crate) csharp_gen: &'a mut CSharp,
     pub(crate) resolve: &'a Resolve,
@@ -134,20 +136,41 @@ impl InterfaceGenerator<'_> {
 
         let global_prefix = self.global_if_user_type(&Type::Id(*ty));
 
+        let ty = &self.resolve.types[*ty];
         if let TypeOwner::Interface(id) = owner {
             if let Some(name) = self.csharp_gen.interface_names.get(&id) {
                 if name != self.name {
-                    return format!("{global_prefix}{name}.");
+                    return format!("{global_prefix}{name}{}.", self.import_export_suffix(&ty.kind));
                 }
             }
         }
 
         if when {
             let name = self.name;
-            format!("{global_prefix}{name}.")
+            
+            format!("{global_prefix}{name}{}.", self.import_export_suffix(&ty.kind))
         } else {
             String::new()
         }
+    }
+
+    fn import_export_suffix(&self, kind: &TypeDefKind) -> &str {
+        // Only some types are direction specific.
+        let direction_specific = match kind {
+            TypeDefKind::Resource => true,
+            TypeDefKind::Record(_) => true,
+            _ => false,
+        };
+
+        if direction_specific {
+            if self.direction == Direction::Export {
+                return ".Exports";
+            } else {
+                return ".Imports";
+            }
+        }
+
+        ""
     }
 
     pub(crate) fn add_interface_fragment(self, is_export: bool) {
@@ -158,6 +181,7 @@ impl InterfaceGenerator<'_> {
             .interface_fragments
             .push(InterfaceFragment {
                 csharp_src: self.src,
+                csharp_type_src: self.type_src,
                 csharp_interop_src: self.csharp_interop_src,
                 stub: self.stub,
                 direction: self.direction,
@@ -167,6 +191,7 @@ impl InterfaceGenerator<'_> {
     pub(crate) fn add_world_fragment(self) {
         self.csharp_gen.world_fragments.push(InterfaceFragment {
             csharp_src: self.src,
+            csharp_type_src: self.type_src,
             csharp_interop_src: self.csharp_interop_src,
             stub: self.stub,
             direction: self.direction,
@@ -518,7 +543,7 @@ impl InterfaceGenerator<'_> {
     }
 
     fn type_name(&mut self, ty: &Type) -> String {
-        self.type_name_with_qualifier(ty, false)
+        self.type_name_with_qualifier(ty, true) // We want the qualifier as the types are shared between Imports and Exports interface and therefor at a higher level.
     }
 
     // We use a global:: prefix to avoid conflicts with namespace clashes on partial namespace matches
@@ -659,11 +684,12 @@ impl InterfaceGenerator<'_> {
                     }
                     _ => {
                         if let Some(name) = &ty.name {
-                            format!(
+                            let s = format!(
                                 "{}{}",
                                 self.qualifier(qualifier, id),
                                 name.to_upper_camel_case()
-                            )
+                            );
+                            s
                         } else {
                             unreachable!("todo: {ty:?}")
                         }
@@ -990,6 +1016,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
                 .join("\n")
         };
 
+        // Records can have resources, so we create them inside the Import/Export interface.
         uwrite!(
             self.src,
             "
@@ -1035,7 +1062,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let access = self.csharp_gen.access_modifier();
 
         uwrite!(
-            self.src,
+            self.type_src,
             "
             {access} enum {name} {enum_type} {{
                 {enum_elements}
@@ -1119,7 +1146,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join("\n");
 
         uwrite!(
-            self.src,
+            self.type_src,
             "
             {access} class {name} {{
                 {access} readonly {tag_type} Tag;

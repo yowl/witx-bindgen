@@ -92,8 +92,8 @@ impl LanguageMethods for Csharp {
         runner.run_command(&mut cmd)?;
 
         fs::copy(&wasm_filename, &compile.output)?;
-
         Ok(())
+
     }
 
     fn verify(&self, runner: &Runner<'_>, verify: &Verify<'_>) -> Result<()> {

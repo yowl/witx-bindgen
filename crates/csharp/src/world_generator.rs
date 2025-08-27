@@ -6,6 +6,7 @@ use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::{iter, mem};
 use wit_bindgen_core::{uwrite, Direction, Files, InterfaceGenerator as _, WorldGenerator};
@@ -42,7 +43,7 @@ pub struct CSharp {
     pub(crate) import_funcs_called: bool,
 }
 
-impl CSharp {
+impl<'a> CSharp {
     pub(crate) fn access_modifier(&self) -> &'static str {
         if self.opts.internal {
             "internal"
@@ -56,7 +57,7 @@ impl CSharp {
         format!("{world}World.")
     }
 
-    fn interface<'a>(
+    fn interface(
         &'a mut self,
         resolve: &'a Resolve,
         name: &'a str,
@@ -66,6 +67,7 @@ impl CSharp {
         InterfaceGenerator {
             src: String::new(),
             csharp_interop_src: String::new(),
+            type_src: String::new(),
             stub: String::new(),
             csharp_gen: self,
             resolve,
@@ -90,7 +92,7 @@ impl CSharp {
     }
 }
 
-impl WorldGenerator for CSharp {
+impl<'a> WorldGenerator for CSharp {
     fn preprocess(&mut self, resolve: &Resolve, world: WorldId) {
         let name = &resolve.worlds[world].name;
         self.name = name.to_string();
@@ -344,9 +346,17 @@ impl WorldGenerator for CSharp {
             
             implemented_interfaces.push_str("Exports");
         }
+
+        let type_body = self.world_fragments
+            .iter()
+            .map(|f| f.csharp_type_src.deref())
+            .collect::<Vec<_>>()
+            .join("\n");
+
         uwrite!(src,
             "
              {access} interface I{name}World {implemented_interfaces} {{
+                {type_body}
             "
         );
 
@@ -696,13 +706,19 @@ impl WorldGenerator for CSharp {
             );
         }
 
-        for (full_name, interface_type_and_fragments) in &self.interface_fragments {
+        for (name, interface_type_and_fragments) in &self.interface_fragments {
             let fragments = &interface_type_and_fragments.interface_fragments;
 
             let (namespace, interface_name) =
-                &CSharp::get_class_name_from_qualified_name(full_name);
+                &CSharp::get_class_name_from_qualified_name(&name);
 
             // C#
+            let types_body = fragments
+                .iter()
+                .map(|f| f.csharp_type_src.deref())
+                .collect::<Vec<_>>()
+                .join("\n");
+
             let import_body = fragments
                 .iter()
                 .filter(|f| f.direction == Direction::Import)
@@ -723,11 +739,13 @@ impl WorldGenerator for CSharp {
 
                     namespace {namespace};
 
-                    {access} interface {interface_name} {{
+                    {access} partial interface {interface_name} {{
+                        {}
                         {}
                         {}
                     }}
                     ",
+                    types_body,
                     if import_body.len() > 0 {
                         format!(
                     "{access} interface Imports
@@ -748,7 +766,7 @@ impl WorldGenerator for CSharp {
                     },
                 );
 
-                files.push(&format!("{full_name}.cs"), indent(&body).as_bytes());
+                files.push(&format!("{}.cs", name), indent(&body).as_bytes());
             }
 
             // C# Interop
@@ -776,8 +794,8 @@ impl WorldGenerator for CSharp {
                 indent(&body).as_bytes(),
             );
 
-            if interface_type_and_fragments.is_export && self.opts.generate_stub {
-                generate_stub(full_name.to_string(), files, Stubs::Interface(fragments));
+            if export_body.len() > 0 && self.opts.generate_stub {
+                generate_stub(name.clone(), files, Stubs::Interface(fragments));
             }
         }
 
@@ -891,12 +909,8 @@ fn interface_name(
     let world_namespace = &csharp.qualifier();
 
     format!(
-        "{}wit.{}.{}I{name}",
+        "{}wit.{}I{name}",
         world_namespace,
-        match direction {
-            Direction::Import => "imports",
-            Direction::Export => "exports",
-        },
         namespace
     )
 }
