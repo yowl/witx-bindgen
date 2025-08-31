@@ -973,7 +973,7 @@ impl Bindgen for FunctionBindgen<'_, '_> {
 
                 let operands = operands.join(", ");
                 let (_namespace, interface_name) =
-                     &CSharp::get_class_name_from_qualified_name(self.interface_gen.name);
+                     &CSharp::get_class_name_from_qualified_name(&self.interface_gen.name);
                 let mut interop_name = format!("{}Interop", interface_name.strip_prefix("I").unwrap());
 
                 if self.interface_gen.is_world && self.interface_gen.direction == Direction::Import {
@@ -987,9 +987,9 @@ impl Bindgen for FunctionBindgen<'_, '_> {
             }
 
             Instruction::CallInterface { func, .. } => {
-                let module = self.interface_gen.name;
+                let module = self.interface_gen.name.clone();
                 let func_name = self.func_name.to_upper_camel_case();
-                let interface_name = CSharp::get_class_name_from_qualified_name(module).1;
+                let interface_name = CSharp::get_class_name_from_qualified_name(&module).1;
 
                 let class_name_root = interface_name
                     .strip_prefix("I")

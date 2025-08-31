@@ -2,6 +2,7 @@ use crate::csharp_ident::ToCSharpIdent;
 use crate::function::FunctionBindgen;
 use crate::function::ResourceInfo;
 use crate::world_generator::CSharp;
+use crate::world_generator::TypeGenerationInfo;
 use heck::{ToShoutySnakeCase, ToUpperCamelCase};
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -48,7 +49,7 @@ pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) stub: String,
     pub(crate) csharp_gen: &'a mut CSharp,
     pub(crate) resolve: &'a Resolve,
-    pub(crate) name: &'a str,
+    pub(crate) name: String,
     pub(crate) direction: Direction,
     pub(crate) is_world: bool,
 }
@@ -58,6 +59,16 @@ impl InterfaceGenerator<'_> {
         let mut live = LiveTypes::default();
         live.add_interface(self.resolve, id);
         self.define_live_types(live, id);
+    }
+
+    /// Dereference any number `TypeDefKind::Type` aliases to retrieve the target type.
+    fn dealias(&mut self, mut id: TypeId) -> TypeId {
+        loop {
+            match &self.resolve.types[id].kind {
+                TypeDefKind::Type(Type::Id(that_id)) => id = *that_id,
+                _ => break id,
+            }
+        }
     }
 
     //TODO: we probably need this for anonymous types outside of an interface...
@@ -134,19 +145,24 @@ impl InterfaceGenerator<'_> {
             type_def.owner
         };
 
-        let global_prefix = self.global_if_user_type(&Type::Id(*ty));
+        let type_id = Type::Id(*ty);
+        let global_prefix = self.global_if_user_type(&type_id);
+
+        if let Some(type_generation_info) = self.csharp_gen.generated_direction(*ty) {
+            return format!("{global_prefix}{}.", type_generation_info.interface_name);
+        }
 
         let ty = &self.resolve.types[*ty];
         if let TypeOwner::Interface(id) = owner {
             if let Some(name) = self.csharp_gen.interface_names.get(&id) {
-                if name != self.name {
+                if *name != self.name {
                     return format!("{global_prefix}{name}{}.", self.import_export_suffix(&ty.kind));
                 }
             }
         }
 
         if when {
-            let name = self.name;
+            let name = &self.name;
             
             format!("{global_prefix}{name}{}.", self.import_export_suffix(&ty.kind))
         } else {
@@ -606,8 +622,8 @@ impl InterfaceGenerator<'_> {
             Type::String => "string".to_owned(),
             Type::ErrorContext => todo!("error context name with qualifier"),
             Type::Id(id) => {
-                let ty = &self.resolve.types[*id];
-                match &ty.kind {
+                let type_def = &self.resolve.types[*id];
+                match &type_def.kind {
                     TypeDefKind::Type(ty) => {
                         self.name_with_qualifier(ty, qualifier, parameter_type)
                     }
@@ -683,7 +699,7 @@ impl InterfaceGenerator<'_> {
                         self.type_name_with_qualifier(&Type::Id(*id), qualifier)
                     }
                     _ => {
-                        if let Some(name) = &ty.name {
+                        if let Some(name) = &type_def.name {
                             let s = format!(
                                 "{}{}",
                                 self.qualifier(qualifier, id),
@@ -691,7 +707,7 @@ impl InterfaceGenerator<'_> {
                             );
                             s
                         } else {
-                            unreachable!("todo: {ty:?}")
+                            unreachable!("todo: {type_def:?}")
                         }
                     }
                 }
@@ -969,7 +985,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.resolve
     }
 
-    fn type_record(&mut self, _id: TypeId, name: &str, record: &Record, docs: &Docs) {
+    fn type_record(&mut self, id: TypeId, name: &str, record: &Record, docs: &Docs) {
         let access = self.csharp_gen.access_modifier();
 
         self.print_docs(docs);
@@ -1029,6 +1045,10 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }}
             "
         );
+
+        let type_def = &self.resolve().types[id];
+        self.csharp_gen.add_type_definition(id, TypeGenerationInfo{direction: self.direction, interface_name: 
+            format!("{}{}", self.name.clone(), self.import_export_suffix(&type_def.kind))});    
     }
 
     fn type_flags(&mut self, _id: TypeId, name: &str, flags: &Flags, docs: &Docs) {
@@ -1191,7 +1211,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         let access = self.csharp_gen.access_modifier();
 
         uwrite!(
-            self.src,
+            self.type_src,
             "
             {access} enum {name} {{
                 {cases}
@@ -1201,7 +1221,22 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
     }
 
     fn type_alias(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {
-        self.type_name(&Type::Id(id));
+        // The alias could be to a type in a different direction of interface, check and add if necessary.
+        let dealiased_id = self.dealias(id);
+        // Imports can't refer to exports, but exports can refer to imports.
+        // Imports are generated first so we can look up in the map to see what has been generated.
+        match self.csharp_gen.generated_direction(dealiased_id)
+        {
+            Some(dealiased_info) =>
+            {
+                if dealiased_info.direction != self.direction 
+                {
+                    let ty = &self.resolve.types[dealiased_id];
+                    self.define_type(ty.name.as_deref().unwrap(), dealiased_id);
+                }
+            }
+            _ => {}
+        }
     }
 
     fn type_list(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {

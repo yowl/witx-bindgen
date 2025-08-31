@@ -16,6 +16,12 @@ use wit_parser::{
     Function, InterfaceId, Resolve, SizeAlign, Type, TypeId, TypeOwner, WorldId, WorldKey,
 };
 
+pub struct TypeGenerationInfo
+{
+    pub(crate) direction: Direction,
+    pub(crate) interface_name: String,
+}
+
 /// CSharp is the world generator for wit files. It coordinates all the generated code.
 /// It will call out to interfaceGenerator (and in turn FunctionGenerator)
 /// to get the source to put in each file. It will then assemble those files
@@ -41,6 +47,7 @@ pub struct CSharp {
     pub(crate) all_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) world_resources: HashMap<TypeId, ResourceInfo>,
     pub(crate) import_funcs_called: bool,
+    pub(crate) type_generators: HashMap<TypeId, TypeGenerationInfo>,
 }
 
 impl<'a> CSharp {
@@ -60,7 +67,7 @@ impl<'a> CSharp {
     fn interface(
         &'a mut self,
         resolve: &'a Resolve,
-        name: &'a str,
+        name: String,
         direction: Direction,
         is_world: bool,
     ) -> InterfaceGenerator<'a> {
@@ -90,6 +97,14 @@ impl<'a> CSharp {
             (String::new(), String::new())
         }
     }
+    
+    pub(crate) fn add_type_definition(&mut self, id: TypeId, type_generation_info: TypeGenerationInfo) {
+        self.type_generators.insert(id, type_generation_info);
+    }
+    
+    pub(crate) fn generated_direction(&self, id: TypeId) -> Option<&TypeGenerationInfo> {
+        return self.type_generators.get(&id);
+    }
 }
 
 impl<'a> WorldGenerator for CSharp {
@@ -108,7 +123,7 @@ impl<'a> WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = interface_name(self, resolve, key, Direction::Import);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Import, false);
+        let mut gen = self.interface(resolve, name, Direction::Import, false);
 
         let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
         gen.types(id);
@@ -156,7 +171,7 @@ impl<'a> WorldGenerator for CSharp {
 
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name, Direction::Import, true);
+        let mut gen = self.interface(resolve, name.to_owned(), Direction::Import, true);
 
         for (resource, funcs) in by_resource(
             funcs.iter().copied(),
@@ -187,7 +202,7 @@ impl<'a> WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = interface_name(self, resolve, key, Direction::Export);
         self.interface_names.insert(id, name.clone());
-        let mut gen = self.interface(resolve, &name, Direction::Export, false);
+        let mut gen = self.interface(resolve, name, Direction::Export, false);
 
         let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
         gen.types(id);
@@ -231,7 +246,7 @@ impl<'a> WorldGenerator for CSharp {
     ) -> anyhow::Result<()> {
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name, Direction::Export, true);
+        let mut gen = self.interface(resolve, name.to_owned(), Direction::Export, true);
 
         for (resource, funcs) in by_resource(funcs.iter().copied(), iter::empty()) {
             if let Some(resource) = resource {
@@ -260,7 +275,7 @@ impl<'a> WorldGenerator for CSharp {
     ) {
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name, Direction::Import, false);
+        let mut gen = self.interface(resolve, name.to_owned(), Direction::Import, false);
 
         let mut old_resources = mem::take(&mut gen.csharp_gen.all_resources);
         for (ty_name, ty) in types {
