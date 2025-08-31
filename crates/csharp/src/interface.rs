@@ -1196,7 +1196,11 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.type_name(&Type::Id(id));
     }
 
-    fn type_enum(&mut self, _id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+    fn type_enum(&mut self, id: TypeId, name: &str, enum_: &Enum, docs: &Docs) {
+        if let Some(_) = self.csharp_gen.generated_direction(id) {
+            return;
+        }
+
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
@@ -1218,6 +1222,9 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }}
             "
         );
+
+        self.csharp_gen.add_type_definition(id, TypeGenerationInfo{direction: self.direction, interface_name: 
+            format!("{}", self.name.clone())});    
     }
 
     fn type_alias(&mut self, id: TypeId, _name: &str, _ty: &Type, _docs: &Docs) {

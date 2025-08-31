@@ -314,13 +314,21 @@ impl<'a> WorldGenerator for CSharp {
 
         let access = self.access_modifier();
 
+        let type_body = self.world_fragments
+            .iter()
+            .map(|f| f.csharp_type_src.deref())
+            .collect::<Vec<_>>()
+            .join("\n");
+
         uwrite!(
             src,
             "
              namespace {world_namespace} {{
-            ");
 
-        let mut implemented_interfaces = String::new();
+                {access} interface I{name}World {{
+                    {type_body}
+
+             ");
 
         let import_body = self.world_fragments
             .iter()
@@ -336,7 +344,6 @@ impl<'a> WorldGenerator for CSharp {
                     {import_body}
                 }}"
             );
-            implemented_interfaces.push_str(": Imports");
         };
 
         let export_body = self.world_fragments
@@ -353,27 +360,7 @@ impl<'a> WorldGenerator for CSharp {
                 {{
                     {export_body}
                 }}");
-            if !implemented_interfaces.is_empty() {
-                implemented_interfaces.push_str(", ");
-            } else {
-                implemented_interfaces.push_str(": ");
-            }
-            
-            implemented_interfaces.push_str("Exports");
         }
-
-        let type_body = self.world_fragments
-            .iter()
-            .map(|f| f.csharp_type_src.deref())
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        uwrite!(src,
-            "
-             {access} interface I{name}World {implemented_interfaces} {{
-                {type_body}
-            "
-        );
 
         let mut producers = wasm_metadata::Producers::empty();
         producers.add(
