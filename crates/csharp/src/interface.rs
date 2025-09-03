@@ -45,7 +45,7 @@ impl InterfaceTypeAndFragments {
 pub(crate) struct InterfaceGenerator<'a> {
     pub(crate) src: String,
     pub(crate) csharp_interop_src: String,
-    pub(crate) type_src: String,
+    pub(crate) type_src: String, // For types that are shared between import and export.
     pub(crate) stub: String,
     pub(crate) csharp_gen: &'a mut CSharp,
     pub(crate) resolve: &'a Resolve,
@@ -175,6 +175,7 @@ impl InterfaceGenerator<'_> {
         let direction_specific = match kind {
             TypeDefKind::Resource => true,
             TypeDefKind::Record(_) => true,
+            TypeDefKind::Variant(_) => true,
             _ => false,
         };
 
@@ -820,6 +821,7 @@ impl InterfaceGenerator<'_> {
                     }}
                     "#
                 );
+                self.csharp_gen.needs_rep_table = true;
 
                 let module_name = key
                     .map(|key| format!("[export]{}", self.resolve.name_world_key(key)))
@@ -843,7 +845,7 @@ impl InterfaceGenerator<'_> {
                 uwriteln!(
                     self.src,
                     r#"
-                    {access} abstract class {upper_camel}: global::System.IDisposable {{
+                    {access} class {upper_camel}: global::System.IDisposable {{
                         internal static RepTable<{upper_camel}> repTable = new ();
                         internal int Handle {{ get; set; }}
 
@@ -1095,7 +1097,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
         self.type_name(&Type::Id(id));
     }
 
-    fn type_variant(&mut self, _id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
+    fn type_variant(&mut self, id: TypeId, name: &str, variant: &Variant, docs: &Docs) {
         self.print_docs(docs);
 
         let name = name.to_upper_camel_case();
@@ -1166,7 +1168,7 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             .join("\n");
 
         uwrite!(
-            self.type_src,
+            self.src,
             "
             {access} class {name} {{
                 {access} readonly {tag_type} Tag;
@@ -1186,6 +1188,10 @@ impl<'a> CoreInterfaceGenerator<'a> for InterfaceGenerator<'a> {
             }}
             "
         );
+
+        let type_def = &self.resolve().types[id];
+        self.csharp_gen.add_type_definition(id, TypeGenerationInfo{direction: self.direction, interface_name: 
+            format!("{}{}", self.name.clone(), self.import_export_suffix(&type_def.kind))});    
     }
 
     fn type_option(&mut self, id: TypeId, _name: &str, _payload: &Type, _docs: &Docs) {

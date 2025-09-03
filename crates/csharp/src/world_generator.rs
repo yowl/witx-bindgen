@@ -105,6 +105,35 @@ impl<'a> CSharp {
     pub(crate) fn generated_direction(&self, id: TypeId) -> Option<&TypeGenerationInfo> {
         return self.type_generators.get(&id);
     }
+
+    fn import_funcs_for_direction(
+        &mut self,
+        resolve: &Resolve,
+        name: &String,
+        funcs: &[(&str, &Function)],
+        direction: Direction
+    ) {
+        let mut gen = self.interface(resolve, name.to_owned(), direction, true);
+
+        for (resource, funcs) in by_resource(
+            funcs.iter().copied(),
+            gen.csharp_gen.world_resources.keys().copied(),
+        ) {
+            if let Some(resource) = resource {
+                gen.start_resource(resource, None);
+            }
+
+            for func in funcs {
+                gen.import("$root", func);
+            }
+
+            if resource.is_some() {
+                gen.end_resource();
+            }
+        }
+
+        gen.add_world_fragment();
+    }
 }
 
 impl<'a> WorldGenerator for CSharp {
@@ -171,26 +200,9 @@ impl<'a> WorldGenerator for CSharp {
 
         let name = &format!("{}-world", resolve.worlds[world].name).to_upper_camel_case();
         let name = &format!("{name}.I{name}");
-        let mut gen = self.interface(resolve, name.to_owned(), Direction::Import, true);
 
-        for (resource, funcs) in by_resource(
-            funcs.iter().copied(),
-            gen.csharp_gen.world_resources.keys().copied(),
-        ) {
-            if let Some(resource) = resource {
-                gen.start_resource(resource, None);
-            }
-
-            for func in funcs {
-                gen.import("$root", func);
-            }
-
-            if resource.is_some() {
-                gen.end_resource();
-            }
-        }
-
-        gen.add_world_fragment();
+        self.import_funcs_for_direction(resolve, name, funcs, Direction::Import);
+        self.import_funcs_for_direction(resolve, name, funcs, Direction::Export);
     }
 
     fn export_interface(
