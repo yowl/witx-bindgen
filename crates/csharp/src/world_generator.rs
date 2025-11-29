@@ -9,7 +9,7 @@ use std::fmt::Write;
 use std::ops::Deref;
 use std::{iter, mem};
 use wit_bindgen_core::{
-    uwrite, uwriteln, Direction, Files, InterfaceGenerator as _, WorldGenerator,
+    uwrite, Direction, Files, InterfaceGenerator as _, WorldGenerator,
 };
 use wit_component::WitPrinter;
 use wit_parser::abi::WasmType;
